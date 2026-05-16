@@ -53,6 +53,7 @@
     "!dist/extensions/msteams/**",
     "!dist/extensions/nextcloud-talk/**",
     "!dist/extensions/nostr/**",
+    "!dist/extensions/octo/**",
     "!dist/extensions/qqbot/**",
     "!dist/extensions/qa-channel/**",
     "!dist/extensions/qa-lab/**",
