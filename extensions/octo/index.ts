@@ -1,0 +1,149 @@
+/**
+ * @openclaw/octo - bundled channel plugin entry.
+ *
+ * Connects OpenClaw to the Octo messaging platform via WebSocket for
+ * real-time messaging.
+ */
+
+import { defineBundledChannelEntry, type PluginCommandContext } from "openclaw/plugin-sdk/channel-entry-contract";
+import { getGroupMdForPrompt } from "./src/group-md.js";
+import { pendingInboundContext } from "./src/inbound.js";
+
+const CHANNEL_ID = "octo";
+
+function validateAccountId(value: string): boolean {
+  return /^[A-Za-z0-9_]+$/.test(value);
+}
+
+function channelConfigPath(...parts: string[]): string {
+  return ["channels", CHANNEL_ID, ...parts].join(".");
+}
+
+export default defineBundledChannelEntry({
+  id: "octo",
+  name: "Octo",
+  description: "Octo channel plugin",
+  importMetaUrl: import.meta.url,
+  plugin: {
+    specifier: "./channel-plugin-api.js",
+    exportName: "octoPlugin",
+  },
+  runtime: {
+    specifier: "./runtime-setter-api.js",
+    exportName: "setOctoRuntime",
+  },
+  registerFull(api) {
+    async function handleDoctor(_ctx: PluginCommandContext) {
+      return {
+        text:
+          "Octo doctor: run `openclaw doctor` for full diagnostics. " +
+          "In bundled mode the host doctor reports channel/account health.",
+      };
+    }
+
+    async function handleInfo() {
+      return {
+        text: [
+          "octo: bundled",
+          `openclaw: ${api.version ?? "unknown"}`,
+          "plugin package: @openclaw/octo",
+        ].join("\n"),
+      };
+    }
+
+    async function handleAddAccount(ctx: PluginCommandContext) {
+      const parts = String(ctx.args ?? "").trim().split(/\s+/);
+      if (parts.length < 3 || !parts[0]) {
+        return {
+          text:
+            "Usage: /octo_add_account <account_id> <bot_token> <api_url>\n" +
+            "Or use the CLI: openclaw config set channels.octo.accounts.<id>.botToken=<token>",
+          isError: true,
+        };
+      }
+      const [accountId, botToken, apiUrl] = parts;
+      if (!validateAccountId(accountId)) {
+        return {
+          text: `Invalid account ID "${accountId}". Only letters, digits, and underscores allowed.`,
+          isError: true,
+        };
+      }
+      if (!botToken.startsWith("bf_")) {
+        return { text: "Bot token must start with 'bf_'.", isError: true };
+      }
+      return {
+        text:
+          `To add this account, run:\n\n` +
+          `openclaw config set ${channelConfigPath("accounts", accountId, "botToken")}=${botToken}\n` +
+          `openclaw config set ${channelConfigPath("accounts", accountId, "apiUrl")}=${apiUrl}\n\n` +
+          "Then restart the gateway: openclaw restart",
+      };
+    }
+
+    async function handleRemoveAccount(ctx: PluginCommandContext) {
+      const accountId = String(ctx.args ?? "").trim();
+      if (!accountId) {
+        return { text: "Usage: /octo_remove_account <account_id>", isError: true };
+      }
+      if (!validateAccountId(accountId)) {
+        return {
+          text: `Invalid account ID "${accountId}". Only letters, digits, and underscores allowed.`,
+          isError: true,
+        };
+      }
+      return {
+        text:
+          `To remove this account, run:\n\n` +
+          `openclaw config unset ${channelConfigPath("accounts", accountId)}\n\n` +
+          "Then restart the gateway: openclaw restart",
+      };
+    }
+
+    api.registerCommand({
+      name: "octo_doctor",
+      description: "Check Octo plugin status and connectivity",
+      acceptsArgs: true,
+      handler: handleDoctor,
+    });
+    api.registerCommand({
+      name: "octo_info",
+      description: "Show Octo plugin version info",
+      acceptsArgs: false,
+      handler: handleInfo,
+    });
+    api.registerCommand({
+      name: "octo_add_account",
+      description: "Add or update an Octo bot account. Args: <account_id> <bot_token> <api_url>",
+      acceptsArgs: true,
+      handler: handleAddAccount,
+    });
+    api.registerCommand({
+      name: "octo_remove_account",
+      description: "Remove an Octo bot account. Args: <account_id>",
+      acceptsArgs: true,
+      handler: handleRemoveAccount,
+    });
+
+    api.on("before_prompt_build", (_event, ctx) => {
+      const sections: string[] = [];
+
+      const groupMdContent = getGroupMdForPrompt(ctx);
+      if (groupMdContent) {
+        sections.push(`[GROUP CONTEXT]\n${groupMdContent}\n[/GROUP CONTEXT]`);
+      }
+
+      const sessionKey = ctx.sessionKey;
+      if (sessionKey) {
+        const pending = pendingInboundContext.get(sessionKey);
+        if (pending) {
+          pendingInboundContext.delete(sessionKey);
+          if (pending.memberListPrefix) sections.push(pending.memberListPrefix);
+          if (pending.historyPrefix) sections.push(pending.historyPrefix);
+        }
+      }
+
+      if (sections.length === 0) return;
+      return { prependContext: sections.join("\n\n") };
+    });
+  },
+});

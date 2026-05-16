@@ -1,0 +1,13 @@
+{
+  "id": "octo",
+  "activation": {
+    "onStartup": false
+  },
+  "channels": ["octo"],
+  "channelEnvVars": {},
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
